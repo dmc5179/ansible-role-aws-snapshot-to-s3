@@ -1,2 +1,25 @@
 ---
 # tasks file for aws-snapshot-to-s3
+
+# Create a volume from the snapshot (same region/az ??)
+
+# Create an EC2 instance  (same region/az ??)
+
+# Attach the volume to the new ec2 instance
+
+# Create a volume to place the dd dump file on (125% size of the volume to be exported)
+
+# Attach the drump volume
+
+# SSH to the host and use dd to export the contents of the source volume to the temp volume
+
+# SSH to the host and use aws CLI to copy the exported contents to S3
+
+# Shutdown the EC2 Instance
+
+# Delete the temp storage volume
+
+# Delete the temp volume that is from the source snapshot
+
+# Terminate the EC2 instance
+
