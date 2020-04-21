@@ -1,9 +1,40 @@
 ---
 # tasks file for aws-snapshot-to-s3
 
-# Create a volume from the snapshot (same region/az ??)
+- name: Create EC2 Instance
+  ec2:
+    assign_public_ip: true
+    ebs_optimized: true
+    instance_tags: '{"key":"Name","key":"Snapshot-Exporter"}'
+    instance_initiated_shutdown_behavior: "terminate"
+    key_name: "{{ ec2_key_name }}"
+    region: "{{ aws_region }}"
+    instance_type: "{{ ec2_instance_type }}"
+    image: "{{ ami }}"
+    wait: true
+    count: 1
+    vpc_subnet_id: "{{ subnet_id }}"
+    volumes:
+      - device_name: /dev/sda1
+        volume_type: gp2
+        volume_size: 15
+        delete_on_termination: true
+    aws_access_key: "{{ aws_access_key_id }}"
+    aws_secret_key: "{{ aws_secret_access_key }}"
+  register: ec2_instance
 
-# Create an EC2 instance  (same region/az ??)
+- name: Create a volume from the snapshot
+  ec2_vol:
+    instance: "{{ ec2_instance.instance_ids[0] }}"
+    snapshot: "{{ snapshot_id }}"
+    delete_on_termination: true
+    device_name: "/dev/xvdf"
+    name: "Snapshot-exporter"
+    state: present
+    region: "{{ aws_region }}"
+    aws_access_key: "{{ aws_access_key_id }}"
+    aws_secret_key: "{{ aws_secret_access_key }}"
+  register: ec2_vol
 
 # Attach the volume to the new ec2 instance
 
@@ -22,4 +53,3 @@
 # Delete the temp volume that is from the source snapshot
 
 # Terminate the EC2 instance
-
