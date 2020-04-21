@@ -2,7 +2,8 @@
 # tasks file for aws-snapshot-to-s3
 
 - name: Create EC2 Instance
-  ec2:
+  local_action:
+    module: ec2
     assign_public_ip: true
     ebs_optimized: true
     instance_tags: '{"key":"Name","key":"Snapshot-Exporter"}'
@@ -23,33 +24,76 @@
     aws_secret_key: "{{ aws_secret_access_key }}"
   register: ec2_instance
 
-- name: Create a volume from the snapshot
-  ec2_vol:
+- name: Create a volume from the snapshot and attach it to the instance
+  local_action:
+    module: ec2_vol
     instance: "{{ ec2_instance.instance_ids[0] }}"
     snapshot: "{{ snapshot_id }}"
     delete_on_termination: true
     device_name: "/dev/xvdf"
-    name: "Snapshot-exporter"
+    name: "Snapshot-exporter-src"
     state: present
     region: "{{ aws_region }}"
     aws_access_key: "{{ aws_access_key_id }}"
     aws_secret_key: "{{ aws_secret_access_key }}"
-  register: ec2_vol
+  register: ec2_vol_src
 
-# Attach the volume to the new ec2 instance
+- name: Create a volume to place the dd dump file
+  local_action:
+    module: ec2_vol
+    instance: "{{ ec2_instance.instance_ids[0] }}"
+    volume_size: "{{ ec2_vol_src.size }}"   # verify this variable name
+    delete_on_termination: true
+    device_name: "/dev/xvdg"
+    name: "Snapshot-exporter-dst"
+    state: present
+    region: "{{ aws_region }}"
+    aws_access_key: "{{ aws_access_key_id }}"
+    aws_secret_key: "{{ aws_secret_access_key }}"
+  register: ec2_vol_dst
 
-# Create a volume to place the dd dump file on (125% size of the volume to be exported)
+- name: Initialize device and create partition
+  parted:
+    device: "/dev/xvdg"
+    label: gpt
+    number: 1
+    state: present
 
-# Attach the drump volume
+- name: Create an xfs filesystem on /dev/xvdg1
+  filesystem:
+    fstype: xfs
+    dev: /dev/xvdg1
 
-# SSH to the host and use dd to export the contents of the source volume to the temp volume
+- name: Mount export volume
+  mount:
+    path: /mnt/export
+    src: /dev/xvdg1
+    fstype: xfs
+    opts: rw,noauto
+    state: present
 
-# SSH to the host and use aws CLI to copy the exported contents to S3
+- name: Export the contents of the source volume to the temp volume with dd
+  command:
+    cmd: dd conv=fsync if=/dev/xvda of=/mnt/export/xvda.raw
 
-# Shutdown the EC2 Instance
+- name: Copy export to S3
+  aws_s3:
+    bucket: "{{ s3_bucket }}"
+    object: /xvda.raw
+    src: /mnt/export/xvda.raw
+    mode: put
+    region: "{{ aws_region }}"
+    aws_access_key: "{{ aws_access_key_id }}"
+    aws_secret_key: "{{ aws_secret_access_key }}"
 
-# Delete the temp storage volume
+- name: Shutdown the EC2 Instance
+  local_action:
+    module: ec2
+    state: 'absent'
+    instance_id: "ec2_instance.instance_ids[0]"
 
-# Delete the temp volume that is from the source snapshot
+# - name: Delete the temp storage volume
 
-# Terminate the EC2 instance
+# - name: Delete the temp volume that is from the source snapshot
+
+# - name: Terminate the EC2 instance
