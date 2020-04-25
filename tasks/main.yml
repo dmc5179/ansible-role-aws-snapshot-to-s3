@@ -127,6 +127,7 @@
   become: true
   pip:
     name: pip
+    executable: pip3
     state: latest
 
 - name: Install AWS CLI
@@ -134,13 +135,14 @@
   become: true
   pip:
     name: awscli
+    executable: pip3
     state: latest
 
 - name: Copy export to S3
   delegate_to: snapshotexporter
   become: true
   command:
-    cmd: aws s3 cp /mnt/export/xvdf.raw "s3://{{ s3_bucket }}/{{ s3_dir }}/"
+    cmd: /usr/local/bin/aws s3 cp /mnt/export/xvdf.raw "s3://{{ s3_bucket }}/{{ s3_dir }}/"
   environment:
     AWS_ACCESS_KEY_ID: "{{ aws_access_key_id }}"
     AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key }}"
