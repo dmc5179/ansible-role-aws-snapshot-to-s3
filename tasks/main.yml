@@ -116,16 +116,22 @@
     cmd: dd conv=fsync if=/dev/xvdf of=/mnt/export/xvdf.raw
 
 - name: Install python3 pip
-  package:
-    name: python3-pip.noarch
+  delegate_to: snapshotexporter
+  become: true
+  yum:
+    name: python3-pip
     state: present
 
 - name: Upgrade pip
+  delegate_to: snapshotexporter
+  become: true
   pip:
     name: pip
     state: latest
 
 - name: Install AWS CLI
+  delegate_to: snapshotexporter
+  become: true
   pip:
     name: awscli
     state: latest
