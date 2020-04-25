@@ -10,6 +10,7 @@
     instance_initiated_shutdown_behavior: "terminate"
     key_name: "{{ ec2_key_name }}"
     region: "{{ aws_region }}"
+    group_id: "{{ ec2_security_group }}"
     instance_type: "{{ ec2_instance_type }}"
     image: "{{ ami }}"
     wait: true
@@ -24,11 +25,27 @@
     aws_secret_key: "{{ aws_secret_access_key }}"
   register: ec2_instance
 
+# TODO: Add task to tag ec2 instance with name
+# TODO: Add task to tag ec2 root dir vol with name
+
+# - name: Debug
+#   debug:
+#     msg: "{{ ec2_instance }}"
+
+- name: Add host facts for new ec2 instance
+  add_host:
+    name: snapshotexporter
+    ansible_host: "{{ ec2_instance['instances'][0]['public_dns_name'] }}"
+    ansible_ssh_private_key_file: "{{ ec2_key_file }}"
+    ansible_user: ec2-user
+    groups: snapshotexporters
+
 - name: Create a volume from the snapshot and attach it to the instance
   local_action:
     module: ec2_vol
     instance: "{{ ec2_instance.instance_ids[0] }}"
     snapshot: "{{ snapshot_id }}"
+    volume_type: gp2
     delete_on_termination: true
     device_name: "/dev/xvdf"
     name: "Snapshot-exporter-src"
@@ -38,21 +55,29 @@
     aws_secret_key: "{{ aws_secret_access_key }}"
   register: ec2_vol_src
 
+# - name: Debug
+#   debug:
+#     msg: "{{ ec2_vol_src }}"
+
 - name: Create a volume to place the dd dump file
   local_action:
     module: ec2_vol
     instance: "{{ ec2_instance.instance_ids[0] }}"
-    volume_size: "{{ ec2_vol_src.size }}"   # verify this variable name
+    volume_size: "{{ (ec2_vol_src.volume.size*1.25)|int|round }}"
+    volume_type: "{{ ec2_vol_src.volume.type }}"
     delete_on_termination: true
     device_name: "/dev/xvdg"
     name: "Snapshot-exporter-dst"
     state: present
     region: "{{ aws_region }}"
+    zone: "{{ ec2_vol_src.volume.zone }}"
     aws_access_key: "{{ aws_access_key_id }}"
     aws_secret_key: "{{ aws_secret_access_key }}"
   register: ec2_vol_dst
 
 - name: Initialize device and create partition
+  delegate_to: snapshotexporter
+  become: true
   parted:
     device: "/dev/xvdg"
     label: gpt
@@ -60,40 +85,64 @@
     state: present
 
 - name: Create an xfs filesystem on /dev/xvdg1
+  delegate_to: snapshotexporter
+  become: true
   filesystem:
     fstype: xfs
     dev: /dev/xvdg1
 
+- name: Create directory to mount dst
+  delegate_to: snapshotexporter
+  become: true
+  file:
+    path: /mnt/export
+    state: directory
+    mode: '0755'
+
 - name: Mount export volume
+  delegate_to: snapshotexporter
+  become: true
   mount:
     path: /mnt/export
     src: /dev/xvdg1
     fstype: xfs
     opts: rw,noauto
-    state: present
+    state: mounted
 
 - name: Export the contents of the source volume to the temp volume with dd
+  delegate_to: snapshotexporter
+  become: true
   command:
-    cmd: dd conv=fsync if=/dev/xvda of=/mnt/export/xvda.raw
+    cmd: dd conv=fsync if=/dev/xvdf of=/mnt/export/xvdf.raw
+
+- name: Install python3 pip
+  package:
+    name: python3-pip.noarch
+    state: present
+
+- name: Upgrade pip
+  pip:
+    name: pip
+    state: latest
+
+- name: Install AWS CLI
+  pip:
+    name: awscli
+    state: latest
 
 - name: Copy export to S3
-  aws_s3:
-    bucket: "{{ s3_bucket }}"
-    object: /xvda.raw
-    src: /mnt/export/xvda.raw
-    mode: put
-    region: "{{ aws_region }}"
-    aws_access_key: "{{ aws_access_key_id }}"
-    aws_secret_key: "{{ aws_secret_access_key }}"
+  delegate_to: snapshotexporter
+  become: true
+  command:
+    cmd: aws s3 cp /mnt/export/xvdf.raw "s3://{{ s3_bucket }}/{{ s3_dir }}/"
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ aws_access_key_id }}"
+    AWS_SECRET_ACCESS_KEY: "{{ aws_secret_access_key }}"
+    AWS_DEFAULT_REGION: "{{ aws_region }}"
 
+# This should delete the volumes as well
 - name: Shutdown the EC2 Instance
   local_action:
     module: ec2
     state: 'absent'
     instance_id: "ec2_instance.instance_ids[0]"
-
-# - name: Delete the temp storage volume
-
-# - name: Delete the temp volume that is from the source snapshot
-
-# - name: Terminate the EC2 instance

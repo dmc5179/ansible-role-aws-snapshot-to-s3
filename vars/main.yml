@@ -3,10 +3,15 @@
 
 snapshot_id: 
 ec2_key_name: 
-ec2_instance_type: t3.small
+ec2_key_file: 
+ec2_instance_type: m4.large
 ami: 
 subnet_id: 
 aws_region: us-east-1
-aws_access_key_id: ""
-aws_secret_access_key: ""
-s3_bucket: ''
+aws_access_key_id:
+aws_secret_access_key:
+# This SG needs to allow for SSH from the host
+# where this role is run to the temporary EC2 instance
+s3_bucket:
+s3_dir:
+ec2_security_group:
