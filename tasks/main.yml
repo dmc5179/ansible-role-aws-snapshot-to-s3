@@ -2,8 +2,8 @@
 # tasks file for aws-snapshot-to-s3
 
 - name: Create EC2 Instance
-  local_action:
-    module: ec2
+  delegate_to: localhost
+  ec2:
     assign_public_ip: true
     ebs_optimized: true
     instance_tags: '{"key":"Name","key":"Snapshot-Exporter"}'
@@ -41,8 +41,8 @@
     groups: snapshotexporters
 
 - name: Create a volume from the snapshot and attach it to the instance
-  local_action:
-    module: ec2_vol
+  delegate_to: localhost
+  ec2_vol:
     instance: "{{ ec2_instance.instance_ids[0] }}"
     snapshot: "{{ snapshot_id }}"
     volume_type: gp2
@@ -60,8 +60,8 @@
 #     msg: "{{ ec2_vol_src }}"
 
 - name: Create a volume to place the dd dump file
-  local_action:
-    module: ec2_vol
+  delegate_to: localhost
+  ec2_vol:
     instance: "{{ ec2_instance.instance_ids[0] }}"
     volume_size: "{{ (ec2_vol_src.volume.size*1.25)|int|round }}"
     volume_type: "{{ ec2_vol_src.volume.type }}"
@@ -128,7 +128,8 @@
   pip:
     name: pip
     executable: pip3
-    state: latest
+    state: present
+    version: '20.0.2'
 
 - name: Install AWS CLI
   delegate_to: snapshotexporter
@@ -136,7 +137,8 @@
   pip:
     name: awscli
     executable: pip3
-    state: latest
+    state: present
+    version: '1.18.46'
 
 - name: Copy export to S3
   delegate_to: snapshotexporter
@@ -150,7 +152,7 @@
 
 # This should delete the volumes as well
 - name: Shutdown the EC2 Instance
-  local_action:
-    module: ec2
+  delegate_to: localhost
+  ec2:
     state: 'absent'
     instance_id: "ec2_instance.instance_ids[0]"
